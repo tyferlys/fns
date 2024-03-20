@@ -4,15 +4,19 @@ import json
 
 import requests
 from bs4 import BeautifulSoup
+from loguru import logger
+
+from db.requestsToDB import DbRequests
 
 
 class Source26():
     def __init__(self):
+        logger.info("Инициализация класса источника 26")
         response = requests.get("https://www.nalog.gov.ru/opendata/7707329152-massleaders/")
         html = response.text
         soup = BeautifulSoup(html, "html.parser")
         href = soup.find_all("tr")[8].find("a")["href"]
-
+        self.data = []
         response = requests.get(href)
         with open('./parsers/Source26/source26.csv', 'wb') as file:
             file.write(response.content)
@@ -23,9 +27,10 @@ class Source26():
             reader = csv.DictReader(file)
             self.rows = list(reader)
 
-    def start_parse(self):
-        newData = []
+        self.dbRequests = DbRequests()
 
+    def start_parse(self):
+        logger.info("Старт парсинга")
         for row in self.rows:
             data = row['G1;G2;G3;G4;G5'].split(";")
 
@@ -43,27 +48,7 @@ class Source26():
             newPerson["link_resource"] = "https://www.nalog.gov.ru/opendata/7707329152-massleaders/"
             newPerson["name_resource"] = "ФНС. Сведения о физических лицах, являющихся руководителями нескольких юридических лиц"
 
-            newData.append(newPerson)
+            self.data.append(newPerson)
 
-        with open('./parsers/Source26/source26.json', "r+", encoding="utf-8") as file:
-            oldData = json.load(file)
-
-            for oldPerson in oldData:
-                isExistArray = filter(lambda newPerson: newPerson["inn"] == oldPerson["inn"] and newPerson["last_name"] == oldPerson["last_name"] and newPerson["first_name"] == oldPerson["first_name"] and newPerson["middle_name"] == oldPerson["middle_name"], newData)
-
-                if len(list(isExistArray)) == 0:
-                    oldPerson["is_relevance"] = False
-                else:
-                    oldPerson["is_relevance"] = True
-
-                oldPerson["date_check"] = datetime.datetime.now().strftime("%d-%m-%Y")
-
-            for newPerson in newData:
-                isExistArray = filter(lambda oldPerson: newPerson["inn"] == oldPerson["inn"] and newPerson["last_name"] == oldPerson[ "last_name"] and newPerson["first_name"] == oldPerson["first_name"] and newPerson["middle_name"] == oldPerson["middle_name"], oldData)
-
-                if len(list(isExistArray)) == 0:
-                    oldData.append(newPerson)
-
-            file.truncate(0)
-            file.seek(0)
-            json.dump(oldData, file, ensure_ascii=False, indent=2)
+        for person in self.data:
+            self.dbRequests.createRecord(person)

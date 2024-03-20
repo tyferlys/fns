@@ -12,7 +12,7 @@ import xml.etree.ElementTree as ET
 class Source86:
     def __init__(self):
         self.roots = []
-        self.currentJson = []
+        self.data = []
 
         files = os.listdir("./parsers/Source86/xmlData")
 
@@ -35,9 +35,6 @@ class Source86:
                             dataDoc["inn"] = childDoc.attrib["ИННЮЛ"]
                         elif childDoc.tag == "СведССЧР":
                             dataDoc["count"] = childDoc.attrib["КолРаб"]
-                    self.currentJson.append(dataDoc)
+                    self.data.append(dataDoc)
+                break
 
-        with open("./parsers/Source86/source86.json", "r+", encoding="utf-8") as file:
-            file.truncate(0)
-            file.seek(0)
-            json.dump(self.currentJson, file, ensure_ascii=False, indent=2)

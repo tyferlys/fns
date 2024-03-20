@@ -2,6 +2,8 @@ import logging
 
 import psycopg
 
+# CREATE INDEX idx_data_search ON tdata USING gin(to_tsvector('russian', data));
+# Это скрипт создания индекса, создавать, когда база забьется нужными данными
 class DbRequests:
     def __init__(self):
         self.DBNAME = "reestrs"
@@ -23,18 +25,22 @@ class DbRequests:
 
         metadata = self.SEPARATOR.join(list(objectData.keys()))
         data = self.SEPARATOR.join((str(x) for x in list(objectData.values())))
+        data = data.replace("\"\'", "\"")
 
-        self.cursor.execute(self.insertQuery, (data, metadata))
-        self.connection.commit()
+        try:
+            self.cursor.execute(self.insertQuery, (data, metadata))
+            self.connection.commit()
+        except Exception as e:
+            logging.warning(f"Ошибка при добавлении: {data} и {metadata}")
 
-    def getRecord(self, requestGetRecord):
-        stringRequest = "SELECT data, metadata FROM tdata WHERE"
-
+    def getRecord(self, requestGetRecord, isFast=False):
         dataRequest = list(requestGetRecord.values())
-        for i in range(len(dataRequest)):
-            if dataRequest[i] is None:
-                dataRequest[i] = ""
-            stringRequest += f" data LIKE '%{dataRequest[i]}%'" if i == 0 else f" AND data LIKE '%{dataRequest[i]}%'"
+        stringRequest = ""
+
+        if isFast:
+            stringRequest = f"SELECT id, data, metadata FROM tdata WHERE to_tsvector('russian', data) @@ to_tsquery('russian', '{" | ".join(dataRequest)}')"
+        else:
+            stringRequest = f"SELECT id, data, metadata FROM tdata WHERE data LIKE {" AND data LIKE ".join([f"'%{item}%'" for item in dataRequest])}"
 
         result = self.cursor.execute(stringRequest).fetchall()
 
@@ -42,9 +48,11 @@ class DbRequests:
         for i in range(len(result)):
             resultObject = dict()
 
-            data = str(result[i][0]).split(" ### ")
-            metadata = str(result[i][1]).split(" ### ")
+            id = str(result[i][0])
+            data = str(result[i][1]).split(" ### ")
+            metadata = str(result[i][2]).split(" ### ")
 
+            resultObject["id"] = id
             for j in range(len(data)):
                 resultObject[f"{metadata[j]}"] = data[j]
 
@@ -52,6 +60,22 @@ class DbRequests:
 
         return resultList
 
+    def updateRecord(self, requestUpdateRecord):
+        idElement = requestUpdateRecord["id"]
+        requestUpdateRecord.pop("id")
+
+        newData = self.SEPARATOR.join((str(x) for x in list(requestUpdateRecord.values())))
+        newData = newData.replace("\"\'", "\"")
+
+        stringRequest = f"UPDATE tdata SET data = '{newData}' WHERE id = {idElement}"
+
+        try:
+            self.cursor.execute(stringRequest)
+            self.connection.commit()
+        except Exception as e:
+            logging.warning(f"Ошибка при обновлении: {newData}")
+
     def clear_all_record(self):
         self.cursor.execute("DELETE FROM tdata;")
+
 
